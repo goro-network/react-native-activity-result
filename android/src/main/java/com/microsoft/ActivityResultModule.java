@@ -7,6 +7,7 @@ import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.util.SparseArray;
+import android.os.Bundle;
 
 import com.facebook.react.bridge.ActivityEventListener;
 import com.facebook.react.bridge.Arguments;
@@ -17,12 +18,16 @@ import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.bridge.WritableNativeMap;
+import com.facebook.react.bridge.Callback;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.ResourceBundle;
 
 import javax.annotation.Nullable;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 
 public class ActivityResultModule extends ReactContextBaseJavaModule implements ActivityEventListener {
 
@@ -62,7 +67,9 @@ public class ActivityResultModule extends ReactContextBaseJavaModule implements 
   @ReactMethod
   public void startActivity(String action, ReadableMap data) {
       Activity activity = getReactApplicationContext().getCurrentActivity();
-      Intent intent = new Intent(action);
+      PackageManager pm = getReactApplicationContext().getPackageManager();
+      Intent intent = pm.getLaunchIntentForPackage(action);
+      intent.setFlags(0);
       intent.putExtras(Arguments.toBundle(data));
       activity.startActivity(intent);
   }
@@ -70,7 +77,9 @@ public class ActivityResultModule extends ReactContextBaseJavaModule implements 
   @ReactMethod
   public void startActivityForResult(int requestCode, String action, ReadableMap data, Promise promise) {
       Activity activity = getReactApplicationContext().getCurrentActivity();
-      Intent intent = new Intent(action);
+      PackageManager pm = getReactApplicationContext().getPackageManager();
+      Intent intent = pm.getLaunchIntentForPackage(action);
+      intent.setFlags(0);
       intent.putExtras(Arguments.toBundle(data));
       activity.startActivityForResult(intent, requestCode);
       mPromises.put(requestCode, promise);
@@ -79,7 +88,8 @@ public class ActivityResultModule extends ReactContextBaseJavaModule implements 
   @ReactMethod
   public void resolveActivity(String action, Promise promise) {
       Activity activity = getReactApplicationContext().getCurrentActivity();
-      Intent intent = new Intent(action);
+      PackageManager pm = getReactApplicationContext().getPackageManager();
+      Intent intent = pm.getLaunchIntentForPackage(action);
       ComponentName componentName = intent.resolveActivity(activity.getPackageManager());
       if (componentName == null) {
           promise.resolve(null);
@@ -105,10 +115,15 @@ public class ActivityResultModule extends ReactContextBaseJavaModule implements 
   public void onActivityResult(Activity activity, int requestCode, int resultCode, Intent data) {
       Promise promise = mPromises.get(requestCode);
       if (promise != null) {
-          WritableMap result = new WritableNativeMap();
-          result.putInt("resultCode", resultCode);
-          result.putMap("data", Arguments.makeNativeMap(data.getExtras()));
-          promise.resolve(result);
+        WritableMap result = new WritableNativeMap();
+        if (resultCode != Activity.RESULT_CANCELED) {
+            result.putInt("resultCode", resultCode);
+            result.putMap("data", Arguments.makeNativeMap(data.getExtras()));
+            promise.resolve(result);
+        } else {
+            result.putInt("resultCode", Activity.RESULT_CANCELED);
+            promise.resolve(result);
+        }
       }
   }
 
@@ -116,4 +131,22 @@ public class ActivityResultModule extends ReactContextBaseJavaModule implements 
   public void onNewIntent(Intent intent) {
       /* Do nothing */
   }
+  
+  @ReactMethod
+    public void getIntentData(Callback callback) {
+        Intent intent = getCurrentActivity().getIntent();
+        if (intent != null) {
+            Bundle extras = intent.getExtras();
+            if (extras != null) {
+                WritableMap intentData = Arguments.createMap();
+                for (String key : extras.keySet()) {
+                    Object value = extras.get(key);
+                    intentData.putString(key, value != null ? value.toString() : null);
+                }
+                callback.invoke(intentData);
+            }
+        } else {
+            callback.invoke(null);
+        }
+    }
 }
